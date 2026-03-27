@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Extension: Auto Refresh</title>
+  <script src="https://extensions.tableau.com/lib/1.11.0/tableau.extensions.1.11.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Benton Sans", "Segoe UI", Arial, sans-serif;
+      background: #fff;
+      color: #333;
+      font-size: 13px;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .topbar-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .done-btn {
+      background: none;
+      border: none;
+      color: #e8762b;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 4px 0;
+    }
+    .done-btn:hover { opacity: 0.8; }
+
+    /* ── Description ── */
+    .description {
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #555;
+      border-bottom: 1px solid #e0e0e0;
+      line-height: 1.5;
+    }
+
+    /* ── Form ── */
+    .form-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1f77b4;
+      margin-bottom: 6px;
+      letter-spacing: 0.2px;
+    }
+
+    .field-input {
+      width: 100%;
+      padding: 6px 8px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      color: #333;
+      background: #fff;
+      outline: none;
+      /* show spinner arrows */
+    }
+    .field-input:focus { border-color: #1f77b4; }
+
+    .field-hint {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #999;
+      font-style: italic;
+    }
+
+    .field-hint.error {
+      color: #c0392b;
+      font-style: normal;
+      font-weight: 600;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 10px 20px;
+      font-size: 10px;
+      color: #bbb;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <span class="topbar-title">Starschema Auto-Refresh</span>
+    <button class="done-btn" id="btnDone">DONE ✕</button>
+  </div>
+
+  <!-- Description -->
+  <div class="description">
+    This extension regularly refreshes Data Sources on the dashboard while viewing.
+  </div>
+
+  <!-- Refresh interval field -->
+  <div class="form-section">
+    <div class="field-label">Refresh interval (seconds)</div>
+    <input
+      class="field-input"
+      type="number"
+      id="intervalInput"
+      min="60"
+      max="86400"
+      step="1"
+      value="300"
+    />
+    <div class="field-hint" id="intervalHint">How often should the data be refreshed? (min. 60)</div>
+  </div>
+
+  <!-- FontSize field -->
+  <div class="form-section">
+    <div class="field-label">FontSize</div>
+    <input
+      class="field-input"
+      type="number"
+      id="fontSizeInput"
+      min="8"
+      max="200"
+      step="1"
+      value="20"
+    />
+    <div class="field-hint">FontSize in pixels.</div>
+  </div>
+
+  <div class="footer">Starschema Auto-Refresh Extension</div>
+
+<script>
+  var MIN_SECONDS = 60;   // ← CHANGED from 300 to 60
+
+  var $interval  = document.getElementById("intervalInput");
+  var $fontSize  = document.getElementById("fontSizeInput");
+  var $hint      = document.getElementById("intervalHint");
+  var $done      = document.getElementById("btnDone");
+
+  // ── Receive current settings from parent ────────────────────────────────────
+  tableau.extensions.initializeDialogAsync().then(function(openPayload) {
+    try {
+      var data = JSON.parse(openPayload);
+      if (data.interval) $interval.value = data.interval;
+      if (data.fontSize) $fontSize.value = data.fontSize;
+    } catch(e) {}
+  }).catch(function() {
+    // standalone open — use defaults
+  });
+
+  // ── Validate interval on input ──────────────────────────────────────────────
+  $interval.addEventListener("input", function() {
+    var val = parseInt($interval.value);
+    if (isNaN(val) || val < MIN_SECONDS) {
+      $hint.textContent = "Minimum value is " + MIN_SECONDS + " seconds.";
+      $hint.classList.add("error");
+    } else {
+      $hint.textContent = "How often should the data be refreshed? (min. " + MIN_SECONDS + ")";
+      $hint.classList.remove("error");
+    }
+  });
+
+  // ── DONE button ─────────────────────────────────────────────────────────────
+  $done.addEventListener("click", function() {
+    var interval = parseInt($interval.value);
+    var fontSize = parseInt($fontSize.value);
+
+    if (isNaN(interval) || interval < MIN_SECONDS) {
+      $hint.textContent = "Please enter a value of at least " + MIN_SECONDS + " seconds.";
+      $hint.classList.add("error");
+      return;
+    }
+
+    tableau.extensions.ui.closeDialog(JSON.stringify({
+      interval: interval,
+      fontSize: fontSize || 20
+    }));
+  });
+</script>
+</body>
+</html>

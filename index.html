@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Auto Refresh</title>
+  <script src="https://extensions.tableau.com/lib/1.11.0/tableau.extensions.1.11.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Benton Sans", "Segoe UI", Arial, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+      padding: 10px;
+    }
+
+    #countdown {
+      font-size: 20px; /* overridden by FontSize setting */
+      font-weight: bold;
+      color: #333;
+      line-height: 1.2;
+    }
+
+    #status {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div id="countdown">...</div>
+  <div id="status">Initializing</div>
+</div>
+
+<script>
+  // ── Settings keys ──────────────────────────────────────────────────────────
+  var KEY_INTERVAL = "refreshIntervalSeconds";
+  var KEY_FONTSIZE = "fontSize";
+  var MIN_SECONDS  = 60;          // ← CHANGED from 300 to 60
+  var DEF_INTERVAL = 300;
+  var DEF_FONTSIZE = 20;
+
+  var intervalSeconds = DEF_INTERVAL;
+  var fontSize        = DEF_FONTSIZE;
+  var secondsLeft     = DEF_INTERVAL;
+  var refreshCount    = 0;
+  var tableauReady    = false;
+
+  var $cd     = document.getElementById("countdown");
+  var $status = document.getElementById("status");
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+  function applySettings() {
+    $cd.style.fontSize = fontSize + "px";
+    secondsLeft = intervalSeconds;
+  }
+
+  function loadSettings() {
+    var iv = parseInt(tableau.extensions.settings.get(KEY_INTERVAL));
+    var fs = parseInt(tableau.extensions.settings.get(KEY_FONTSIZE));
+    if (!isNaN(iv) && iv >= MIN_SECONDS) intervalSeconds = iv;
+    if (!isNaN(fs) && fs > 0)           fontSize        = fs;
+    applySettings();
+  }
+
+  // ── Refresh all data sources ───────────────────────────────────────────────
+  function doRefresh() {
+    $status.textContent = "Refreshing...";
+    var db   = tableau.extensions.dashboardContent.dashboard;
+    var seen = {};
+    var dsList = [];
+
+    var wsPromises = db.worksheets.map(function(ws) {
+      return ws.getDataSourcesAsync().then(function(dss) {
+        dss.forEach(function(ds) {
+          if (!seen[ds.id]) { seen[ds.id] = true; dsList.push(ds); }
+        });
+      });
+    });
+
+    Promise.all(wsPromises)
+      .then(function() {
+        return Promise.all(dsList.map(function(ds) { return ds.refreshAsync(); }));
+      })
+      .then(function() {
+        refreshCount++;
+        $status.textContent = "Refreshed " + refreshCount + "x — " + new Date().toLocaleTimeString();
+      })
+      .catch(function(e) {
+        $status.textContent = "Refresh error: " + (e.message || e);
+      });
+  }
+
+  // ── Countdown tick ─────────────────────────────────────────────────────────
+  function tick() {
+    if (tableauReady) {
+      var m = Math.floor(secondsLeft / 60);
+      var s = secondsLeft % 60;
+      $cd.textContent = pad(m) + ":" + pad(s);
+
+      if (secondsLeft <= 0) {
+        secondsLeft = intervalSeconds;
+        doRefresh();
+      } else {
+        secondsLeft--;
+      }
+    } else {
+      $cd.textContent = "...";
+    }
+    setTimeout(tick, 1000);
+  }
+
+  // ── Configure handler ──────────────────────────────────────────────────────
+  function openConfig() {
+    var configUrl = window.location.origin + window.location.pathname
+                    .replace("index.html", "") + "config.html";
+
+    tableau.extensions.ui.displayDialogAsync(
+      configUrl,
+      JSON.stringify({ interval: intervalSeconds, fontSize: fontSize }),
+      { height: 300, width: 500 }
+    ).then(function(result) {
+      if (!result) return;
+      try {
+        var data = JSON.parse(result);
+        if (data.interval && data.interval >= MIN_SECONDS) intervalSeconds = data.interval;
+        if (data.fontSize && data.fontSize > 0)            fontSize        = data.fontSize;
+        tableau.extensions.settings.set(KEY_INTERVAL, String(intervalSeconds));
+        tableau.extensions.settings.set(KEY_FONTSIZE, String(fontSize));
+        tableau.extensions.settings.saveAsync().then(function() { applySettings(); });
+      } catch(e) {}
+    }).catch(function(err) {
+      if (err.errorCode !== tableau.ErrorCodes.DialogClosedByUser) {
+        $status.textContent = "Config error: " + err.message;
+      }
+    });
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  tableau.extensions.initializeAsync({ configure: openConfig }).then(function() {
+    tableauReady = true;
+    loadSettings();
+    $status.textContent = "Auto-refreshing every " + intervalSeconds + "s";
+  }).catch(function(e) {
+    $status.textContent = "Init error: " + (e.message || e);
+  });
+
+  tick();
+</script>
+</body>
+</html>
